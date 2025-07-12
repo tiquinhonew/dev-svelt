@@ -3,6 +3,7 @@ import { db } from '$lib/db';
 import { visits } from '$lib/schema';
 import { v4 as uuidv4 } from 'uuid';
 import isBot from 'is-bot';
+import { dev } from '$app/environment';
 
 function isPrivateIP(ip: string): boolean {
 	const parts = ip.split('.').map(Number);
@@ -34,30 +35,33 @@ export async function POST({ request, getClientAddress, cookies }) {
 	let country = 'unknown';
 	let city = 'unknown';
 
-	if (ip === '127.0.0.1' || ip === '::1') {
-		country = 'localhost';
-		city = 'localhost';
-	} else if (isPrivateIP(ip)) {
+	const isLocal = ip === '127.0.0.1' || ip === '::1';
+	const fetchIP = dev && isLocal ? '8.8.8.8' : ip;
+
+	if (isPrivateIP(ip)) {
 		country = 'Private Network';
 		city = 'Private Network';
+	} else if (isLocal && !dev) {
+		country = 'localhost';
+		city = 'localhost';
 	} else {
 		try {
-			const locationRes = await fetch(`https://ipinfo.io/${ip}/json`);
+			const locationRes = await fetch(`https://ipinfo.io/${fetchIP}/json`);
 			if (locationRes.ok) {
 				const location = await locationRes.json();
 				country = location.country ?? 'unknown';
 				city = location.city ?? 'unknown';
 			} else {
-				console.log('ipinfo.io request failed with status:', locationRes.status);
+				console.log(`ipinfo.io request for ${fetchIP} failed with status:`, locationRes.status);
 			}
 		} catch (error) {
-			console.error('Failed to fetch location:', error);
+			console.error(`Failed to fetch location for ${fetchIP}:`, error);
 		}
 	}
 
 	await db.insert(visits).values({
 		visitorId,
-		ip,
+		ip, // Log the real IP
 		country,
 		city,
 		datetime: new Date(),
