@@ -23,7 +23,9 @@ function isPrivateIP(ip: string): boolean {
 }
 
 export async function POST({ request, getClientAddress, cookies }) {
-	const ip = getClientAddress();
+	const xForwardedFor = request.headers.get('x-forwarded-for');
+	const clientIp = xForwardedFor ? xForwardedFor.split(',')[0].trim() : getClientAddress();
+
 	const ua = request.headers.get('user-agent') ?? 'unknown';
 
 	let visitorId = cookies.get('visitor_id');
@@ -35,10 +37,10 @@ export async function POST({ request, getClientAddress, cookies }) {
 	let country = 'unknown';
 	let city = 'unknown';
 
-	const isLocal = ip === '127.0.0.1' || ip === '::1';
-	const fetchIP = dev && isLocal ? '8.8.8.8' : ip;
+	const isLocal = clientIp === '127.0.0.1' || clientIp === '::1';
+	const fetchIP = dev && isLocal ? '8.8.8.8' : clientIp;
 
-	if (isPrivateIP(ip)) {
+	if (isPrivateIP(clientIp)) {
 		country = 'Private Network';
 		city = 'Private Network';
 	} else if (isLocal && !dev) {
@@ -61,7 +63,7 @@ export async function POST({ request, getClientAddress, cookies }) {
 
 	await db.insert(visits).values({
 		visitorId,
-		ip, // Log the real IP
+		ip: clientIp, // Log the real IP
 		country,
 		city,
 		datetime: new Date(),
