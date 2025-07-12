@@ -16,6 +16,10 @@
 	let selectedYear = new Date().getFullYear();
 	let showBots = false;
 
+	// Sorting state
+	let sortColumn = 'datetime';
+	let sortDirection = 'desc'; // 'asc' or 'desc'
+
 	// Pagination state
 	let currentPage = 1;
 	let itemsPerPage = 10;
@@ -55,6 +59,17 @@
 	const currentYear = new Date().getFullYear();
 	const years = Array.from({ length: 10 }, (_, i) => currentYear - i);
 
+	function sortVisitsBy(column) {
+		if (sortColumn === column) {
+			sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+		} else {
+			sortColumn = column;
+			sortDirection = 'asc'; // Default to ascending for new column
+			if (column === 'datetime') sortDirection = 'desc'; // Default datetime to descending
+		}
+		applyFilters(); // Re-apply filters to trigger sorting
+	}
+
 	async function fetchData() {
 		const res = await fetch('/api/visits');
 		const data = await res.json();
@@ -69,12 +84,45 @@
 		await tick();
 		currentPage = 1;
 
-		const visitsToProcess = allVisits.filter(v => showBots || !v.isBot);
+		let visitsToProcess = allVisits.filter(v => showBots || !v.isBot);
 
-		filteredVisits = visitsToProcess.filter((v) => {
+		visitsToProcess = visitsToProcess.filter((v) => {
 			const date = new Date(v.datetime);
 			return date.getMonth() + 1 === selectedMonth && date.getFullYear() === selectedYear;
 		});
+
+		// Apply sorting
+		visitsToProcess.sort((a, b) => {
+			let valA, valB;
+
+			switch (sortColumn) {
+				case 'country':
+				case 'city':
+					valA = a[sortColumn].toLowerCase();
+					valB = b[sortColumn].toLowerCase();
+					break;
+				case 'browser':
+					valA = a.browser.name.toLowerCase();
+					valB = b.browser.name.toLowerCase();
+					break;
+				case 'os':
+					valA = a.os.name.toLowerCase();
+					valB = b.os.name.toLowerCase();
+					break;
+				case 'datetime':
+					valA = new Date(a.datetime).getTime();
+					valB = new Date(b.datetime).getTime();
+					break;
+				default:
+					return 0;
+			}
+
+			if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+			if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+			return 0;
+		});
+
+		filteredVisits = visitsToProcess;
 
 		totalVisits = visitsToProcess.length;
 		uniqueVisitors = new Set(visitsToProcess.map(v => v.visitorId)).size;
@@ -110,7 +158,7 @@
 		<p>Análise de tráfego do seu site.</p>
 	</header>
 
-	<div class="grid">
+	<div class="grid stats-cards">
 		<article>
 			<header>Total de Visitas</header>
 			<h2>{totalVisits}</h2>
@@ -123,7 +171,7 @@
 
 	<section>
 		<h2>Visão Geral das Visitas</h2>
-		<div class="grid">
+		<div class="grid filters">
 			<select bind:value={selectedMonth} on:change={applyFilters}>
 				{#each months as month}
 					<option value={month.value}>{month.name}</option>
@@ -134,7 +182,7 @@
 					<option value={year}>{year}</option>
 				{/each}
 			</select>
-			<fieldset>
+			<fieldset class="filter-switch">
 				<label for="switch">
 					<input type="checkbox" id="switch" name="switch" role="switch" bind:checked={showBots} on:change={applyFilters}>
 					Incluir Robôs
@@ -150,11 +198,31 @@
 			<table>
 				<thead>
 					<tr>
-						<th>País</th>
-						<th>Cidade</th>
-						<th>Navegador</th>
-						<th>Sistema</th>
-						<th>Data</th>
+						<th on:click={() => sortVisitsBy('country')}>País
+							{#if sortColumn === 'country'}
+								{#if sortDirection === 'asc'}▲{:else}▼{/if}
+							{/if}
+						</th>
+						<th on:click={() => sortVisitsBy('city')}>Cidade
+							{#if sortColumn === 'city'}
+								{#if sortDirection === 'asc'}▲{:else}▼{/if}
+							{/if}
+						</th>
+						<th on:click={() => sortVisitsBy('browser')}>Navegador
+							{#if sortColumn === 'browser'}
+								{#if sortDirection === 'asc'}▲{:else}▼{/if}
+							{/if}
+						</th>
+						<th on:click={() => sortVisitsBy('os')}>Sistema
+							{#if sortColumn === 'os'}
+								{#if sortDirection === 'asc'}▲{:else}▼{/if}
+							{/if}
+						</th>
+						<th on:click={() => sortVisitsBy('datetime')}>Data
+							{#if sortColumn === 'datetime'}
+								{#if sortDirection === 'asc'}▲{:else}▼{/if}
+							{/if}
+						</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -208,29 +276,61 @@
 
 	header p {
 		margin-top: 0.25rem;
+		color: var(--pico-muted-color);
 	}
 
-	.grid > article {
-		padding: 1rem;
+	.stats-cards article {
+		padding: 0.75rem 1rem;
+		text-align: center;
 	}
 
-	article h2 {
-		font-size: 2.25rem;
-		margin-bottom: 0;
+	.stats-cards h2 {
+		font-size: 2rem;
+		margin: 0;
+	}
+
+	.stats-cards header {
+		font-size: 0.875em;
+		color: var(--pico-muted-color);
 	}
 
 	section {
-		margin-top: 2rem;
+		margin-top: 2.5rem;
+	}
+
+	.filters {
+		grid-template-columns: 1fr 1fr auto;
+		gap: 1rem;
+		align-items: end;
+	}
+
+	.filters .filter-switch {
+		margin-bottom: 0;
+	}
+
+	.filters .filter-switch label {
+		margin: 0;
 	}
 
 	canvas {
-		max-height: 300px;
-		margin-top: 1rem;
+		max-height: 250px; /* Reduced height */
+		margin-top: 1.5rem;
+	}
+
+	table th {
+		cursor: pointer;
+		white-space: nowrap;
+	}
+
+	table th svg {
+		margin-left: 0.25rem;
+		vertical-align: middle;
 	}
 
 	table td,
 	table th {
-		padding: 0.5rem 0.75rem;
+		padding: 0.4rem 0.6rem; /* Reduced padding */
+		font-size: 0.9em;
 	}
 
 	.pagination-footer {
@@ -243,11 +343,12 @@
 	.items-per-page {
 		display: flex;
 		align-items: center;
-		gap: 1rem;
+		gap: 0.75rem;
 	}
 
 	.items-per-page label {
 		margin-bottom: 0;
+		font-size: 0.9em;
 	}
 
 	.items-per-page select {
@@ -256,7 +357,6 @@
 
 	[role="group"] button {
 		margin: 0;
-		/* Make buttons smaller to feel more like pagination controls */
 		padding: 0.4rem 0.8rem;
 		font-size: 0.875em;
 	}
@@ -267,7 +367,6 @@
 		font-size: 0.875em;
 	}
 
-	/* Pico.css uses the 'contrast' class for a high-contrast button, perfect for 'active' state */
 	button.contrast {
 		background-color: var(--pico-primary-background);
 		color: var(--pico-primary-inverse);
