@@ -1,12 +1,14 @@
 import { json } from '@sveltejs/kit';
 
-/**
- * @type {import('./$types').RequestHandler}
- */
 export async function GET({ request }) {
-  const headers = {};
-  for (const [key, value] of request.headers.entries()) {
-    headers[key] = value;
+  try {
+    const headers = {};
+    for (const [key, value] of request.headers.entries()) {
+      headers[key] = value;
+    }
+    return json(headers);
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    return json({ error: 'Failed to read headers', details: error }, { status: 500 });
   }
-  return json(headers);
 }
