@@ -3,9 +3,7 @@
 	import Chart from 'chart.js/auto';
 	import { UAParser } from 'ua-parser-js';
 
-	let allVisits = [];
-	let filteredVisits = [];
-
+	let visits = [];
 	let totalVisits = 0;
 	let uniqueVisitors = 0;
 
@@ -20,14 +18,11 @@
 	let sortColumn = 'datetime';
 	let sortDirection = 'desc'; // 'asc' or 'desc'
 
-	// Pagination state
+	// Pagination state (controlled by backend)
 	let currentPage = 1;
 	let itemsPerPage = 10;
-	$: totalPages = Math.ceil(filteredVisits.length / itemsPerPage);
-	$: paginatedVisits = filteredVisits.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-
-	// When itemsPerPage changes, reset to page 1
-	$: if (itemsPerPage) currentPage = 1;
+	let totalPages = 1;
+	let totalItems = 0;
 
 	// Logic to generate pagination buttons
 	$: paginationButtons = ((currentPage, totalPages) => {
@@ -67,75 +62,55 @@
 			sortDirection = 'asc'; // Default to ascending for new column
 			if (column === 'datetime') sortDirection = 'desc'; // Default datetime to descending
 		}
-		applyFilters(); // Re-apply filters to trigger sorting
+		fetchData(); // Re-fetch data to trigger sorting
 	}
 
 	async function fetchData() {
-		const res = await fetch('/api/visits');
+		const params = new URLSearchParams({
+			page: currentPage,
+			perPage: itemsPerPage,
+			sortColumn: sortColumn,
+			sortDirection: sortDirection,
+			selectedMonth: selectedMonth,
+			selectedYear: selectedYear,
+			showBots: showBots
+		});
+		const res = await fetch(`/api/visits?${params.toString()}`);
 		const data = await res.json();
-		allVisits = data.visits.map((v) => {
+
+		visits = data.visits.map((v) => {
 			const parser = new UAParser(v.userAgent);
 			return { ...v, ...parser.getResult() };
 		});
-		applyFilters();
+
+		uniqueVisitors = data.unique;
+		totalVisits = data.pagination.totalItems;
+		currentPage = data.pagination.page;
+		itemsPerPage = data.pagination.perPage;
+		totalPages = data.pagination.totalPages;
+		totalItems = data.pagination.totalItems;
+
+		updateChart();
 	}
 
 	async function applyFilters() {
 		await tick();
 		currentPage = 1;
-
-		let visitsToProcess = allVisits.filter(v => showBots || !v.isBot);
-
-		visitsToProcess = visitsToProcess.filter((v) => {
-			const date = new Date(v.datetime);
-			return date.getMonth() + 1 === selectedMonth && date.getFullYear() === selectedYear;
-		});
-
-		// Apply sorting
-		visitsToProcess.sort((a, b) => {
-			let valA, valB;
-
-			switch (sortColumn) {
-				case 'country':
-				case 'city':
-					valA = a[sortColumn].toLowerCase();
-					valB = b[sortColumn].toLowerCase();
-					break;
-				case 'browser':
-					valA = a.browser.name.toLowerCase();
-					valB = b.browser.name.toLowerCase();
-					break;
-				case 'os':
-					valA = a.os.name.toLowerCase();
-					valB = b.os.name.toLowerCase();
-					break;
-				case 'datetime':
-					valA = new Date(a.datetime).getTime();
-					valB = new Date(b.datetime).getTime();
-					break;
-				default:
-					return 0;
-			}
-
-			if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
-			if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
-			return 0;
-		});
-
-		filteredVisits = visitsToProcess;
-
-		totalVisits = visitsToProcess.length;
-		uniqueVisitors = new Set(visitsToProcess.map(v => v.visitorId)).size;
-
-		updateChart();
+		fetchData();
 	}
 
 	function updateChart() {
 		if (chart) chart.destroy();
 
-		const visitsByDay = filteredVisits.reduce((acc, v) => {
-			const day = new Date(v.datetime).getDate();
-			acc[day] = (acc[day] || 0) + 1;
+		const visitsByDay = visits.reduce((acc, v) => {
+			const date = new Date(v.datetime);
+			const day = date.getDate();
+			const month = date.getMonth() + 1;
+			const year = date.getFullYear();
+
+			if (month === selectedMonth && year === selectedYear) {
+				acc[day] = (acc[day] || 0) + 1;
+			}
 			return acc;
 		}, {});
 
@@ -226,7 +201,7 @@
 					</tr>
 				</thead>
 				<tbody>
-					{#each paginatedVisits as visit}
+					{#each visits as visit}
 						<tr>
 							<td>{visit.isBot ? '🤖' : ''} {visit.country}</td>
 							<td>{visit.city}</td>
@@ -241,7 +216,7 @@
 		<footer class="pagination-footer">
 			<div class="items-per-page">
 				<label for="items-per-page-select">Itens por página:</label>
-				<select id="items-per-page-select" bind:value={itemsPerPage}>
+				<select id="items-per-page-select" bind:value={itemsPerPage} on:change={fetchData}>
 					<option value={10}>10</option>
 					<option value={25}>25</option>
 					<option value={50}>50</option>
@@ -249,15 +224,15 @@
 			</div>
 			<nav aria-label="Pagination navigation">
 				<div role="group">
-					<button class="secondary outline" disabled={currentPage <= 1} on:click={() => currentPage--}>Anterior</button>
+					<button class="secondary outline" disabled={currentPage <= 1} on:click={() => { currentPage--; fetchData(); }}>Anterior</button>
 					{#each paginationButtons as page}
 						{#if typeof page === 'number'}
-							<button class:contrast={currentPage === page} on:click={() => currentPage = page}>{page}</button>
+							<button class:contrast={currentPage === page} on:click={() => { currentPage = page; fetchData(); }}>{page}</button>
 						{:else}
 							<button disabled>...</button>
 						{/if}
 					{/each}
-					<button class="secondary outline" disabled={currentPage >= totalPages} on:click={() => currentPage++}>Próximo</button>
+					<button class="secondary outline" disabled={currentPage >= totalPages} on:click={() => { currentPage++; fetchData(); }}>Próximo</button>
 				</div>
 			</nav>
 		</footer>
