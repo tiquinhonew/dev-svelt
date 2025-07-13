@@ -297,10 +297,7 @@
 		white-space: nowrap;
 	}
 
-	table th svg {
-		margin-left: 0.25rem;
-		vertical-align: middle;
-	}
+	
 
 	table td,
 	table th {
